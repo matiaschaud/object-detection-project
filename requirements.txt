@@ -3,3 +3,5 @@ midv500==0.2.1
 black
 minio==7.1.0
 scikit-learn==1.5.0
+boto3==1.40.11
+python_dotenv==1.1.1
