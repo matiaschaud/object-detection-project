@@ -1,0 +1,155 @@
+# PIPELINE DEFINITION
+# Name: test-pipeline-root
+# Description: Tests the pipeline_root configuration
+# Inputs:
+#    message: str [Default: 'Hello World!']
+components:
+  comp-read-test-file:
+    executorLabel: exec-read-test-file
+    inputDefinitions:
+      artifacts:
+        input_file:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-write-test-file:
+    executorLabel: exec-write-test-file
+    inputDefinitions:
+      parameters:
+        message:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        output_file:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-read-test-file:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - read_test_file
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'fsspec'\
+          \ 'minio' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef read_test_file(input_file: dsl.Input[dsl.Artifact]):\n    \"\"\
+          \"\n    Lee un archivo desde la ruta de entrada del artefacto y muestra\
+          \ su contenido.\n    \"\"\"\n    from minio import Minio\n    from minio.error\
+          \ import S3Error\n    from io import BytesIO\n    import pandas as pd\n\n\
+          \    def read_minio_file(bucket_name, object_name):\n        \"\"\"\n  \
+          \      Lee un archivo de un bucket de MinIO.\n\n        Args:\n        \
+          \    bucket_name (str): El nombre del bucket.\n            object_name (str):\
+          \ El nombre del objeto (archivo) a leer.\n        \"\"\"\n        try:\n\
+          \            # 1. Configurar el cliente MinIO\n            client = Minio(\n\
+          \                \"minio-service.kubeflow.svc.cluster.local:9000\",  # Por\
+          \ ejemplo: \"play.min.io\"\n                access_key=\"minio\",  # Reemplaza\
+          \ con tu access key\n                secret_key=\"minio123\",  # Reemplaza\
+          \ con tu secret key\n                secure=False  # Usa True para HTTPS,\
+          \ False para HTTP\n            )\n\n            # 2. Obtener el objeto del\
+          \ bucket\n            response = client.get_object(bucket_name, object_name)\n\
+          \n            # 3. Leer el contenido del objeto\n            csv_data =\
+          \ BytesIO(response.read())\n\n            return pd.read_csv(csv_data)\n\
+          \n        except S3Error as err:\n            print(f\"Error al leer el\
+          \ archivo desde MinIO: {err}\")\n        finally:\n            # Cerrar\
+          \ el stream de respuesta para liberar recursos\n            if 'response'\
+          \ in locals() and response:\n                response.close()\n        \
+          \        response.release_conn()    \n\n\n    # Ejemplo de uso\n    mi_bucket\
+          \ = \"object-creation-project\"  # Reemplaza con el nombre de tu bucket\n\
+          \    mi_archivo = \"dataset/test.csv\"     # Reemplaza con el nombre de\
+          \ tu archivo\n    df = read_minio_file(mi_bucket, mi_archivo)\n    print(df)\n\
+          \n    # El archivo se lee desde `input_file.path`.\n    with open(input_file.path,\
+          \ 'r') as f:\n        content = f.read()\n    print(f\"File content: {content}\"\
+          )\n\n"
+        image: python:3.9
+    exec-write-test-file:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - write_test_file
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef write_test_file(message: str, output_file: dsl.Output[dsl.Artifact]):\n\
+          \    # El archivo se escribe en `output_file.path`.\n    with open(output_file.path,\
+          \ 'w') as f:\n        f.write(message)\n    print(f\"Test file written to:\
+          \ {output_file.path}\")\n\n"
+        image: python:3.9
+pipelineInfo:
+  description: Tests the pipeline_root configuration
+  name: test-pipeline-root
+root:
+  dag:
+    tasks:
+      read-test-file:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-read-test-file
+        dependentTasks:
+        - write-test-file
+        inputs:
+          artifacts:
+            input_file:
+              taskOutputArtifact:
+                outputArtifactKey: output_file
+                producerTask: write-test-file
+        taskInfo:
+          name: read-test-file
+      write-test-file:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-write-test-file
+        inputs:
+          parameters:
+            message:
+              componentInputParameter: message
+        taskInfo:
+          name: write-test-file
+  inputDefinitions:
+    parameters:
+      message:
+        defaultValue: Hello World!
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.11.0

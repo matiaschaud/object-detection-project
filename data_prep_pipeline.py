@@ -3,7 +3,7 @@ from kfp.dsl import Input, Output, Dataset
 
 
 @dsl.component(
-    packages_to_install=["requests", "boto3", "tqdm"],
+    packages_to_install=["requests", "tqdm", "boto3"],
     base_image="python:3.11"
 )
 def download_dataset(output_dataset: Output[Dataset], output_dir: str = "DATASET"):
@@ -12,25 +12,38 @@ def download_dataset(output_dataset: Output[Dataset], output_dir: str = "DATASET
     import tarfile
     from tqdm import tqdm
 
-    # FULL Dataset
-    url = "https://manning.box.com/shared/static/34dbdkmhahuafcxh0yhiqaf05rqnzjq9.gz"
-    downloaded_file = "DATASET.gz"
+    # Define the final extraction path
+    extraction_path = os.path.join(output_dataset.path, output_dir)
+    # Define a temporary path for the downloaded file inside the final extraction directory
+    temp_download_path = os.path.join(extraction_path, "temp_downloaded_dataset.gz")
 
+    # Create the final output directory (and the temp directory is inside)
+    os.makedirs(extraction_path, exist_ok=True)
+
+    # FULL Dataset URL
+    url = "https://manning.box.com/shared/static/34dbdkmhahuafcxh0yhiqaf05rqnzjq9.gz"
+
+    print("Starting download...")
     response = requests.get(url, stream=True)
     file_size = int(response.headers.get("Content-Length", 0))
     progress_bar = tqdm(total=file_size, unit="B", unit_scale=True)
 
-    with open(downloaded_file, 'wb') as file:
+    with open(temp_download_path, 'wb') as file:
         for chunk in response.iter_content(chunk_size=1024):
             progress_bar.update(len(chunk))
             file.write(chunk)
-
+    progress_bar.close()
+    print("Download complete.")
+    
     # Extract to the output directory
-    extraction_path = os.path.join(output_dataset.path, output_dir)
-    os.makedirs(extraction_path, exist_ok=True)
-
-    with tarfile.open(downloaded_file, 'r:gz') as tar:
+    print(f"Extracting to {extraction_path}...")
+    with tarfile.open(temp_download_path, 'r:gz') as tar:
         tar.extractall(extraction_path)
+    print("Extraction complete.")
+
+    # Delete the temporary downloaded file
+    os.remove(temp_download_path)
+    print("Temporary file deleted.")
 
 
 @dsl.component(
@@ -97,7 +110,9 @@ def split_dataset(
 
 
 
-@dsl.component
+@dsl.component(
+    base_image="python:3.11"
+)
 def output_file_contents(dataset: Input[Dataset]):
     import os
 
@@ -121,7 +136,15 @@ def output_file_contents(dataset: Input[Dataset]):
 def pipeline(random_state: int = 42):
     # Download the dataset
     download_op = download_dataset()
-
+    download_op.add_pod_annotation(
+        name='kubernetes.io/ephemeral-storage',
+        value='30G'
+    )
+    download_op.add_pod_label(
+        name='kubernetes.io/ephemeral-storage-request',
+        value='30G'
+    )
+    
     # Split the dataset
     split_op = split_dataset(
         random_state=random_state,

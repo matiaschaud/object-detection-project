@@ -67,8 +67,8 @@ deploymentSpec:
           \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
           \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0'\
           \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
-          \  python3 -m pip install --quiet --no-warn-script-location 'requests' 'boto3'\
-          \ 'tqdm' && \"$0\" \"$@\"\n"
+          \  python3 -m pip install --quiet --no-warn-script-location 'requests' 'tqdm'\
+          \ 'boto3' && \"$0\" \"$@\"\n"
         - sh
         - -ec
         - 'program_path=$(mktemp -d)
@@ -82,16 +82,25 @@ deploymentSpec:
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
           \ *\n\ndef download_dataset(output_dataset: Output[Dataset], output_dir:\
           \ str = \"DATASET\"):\n    import os\n    import requests\n    import tarfile\n\
-          \    from tqdm import tqdm\n\n    # FULL Dataset\n    url = \"https://manning.box.com/shared/static/34dbdkmhahuafcxh0yhiqaf05rqnzjq9.gz\"\
-          \n    downloaded_file = \"DATASET.gz\"\n\n    response = requests.get(url,\
+          \    from tqdm import tqdm\n\n    # Define the final extraction path\n \
+          \   extraction_path = os.path.join(output_dataset.path, output_dir)\n  \
+          \  # Define a temporary path for the downloaded file inside the final extraction\
+          \ directory\n    temp_download_path = os.path.join(extraction_path, \"temp_downloaded_dataset.gz\"\
+          )\n\n    # Create the final output directory (and the temp directory is\
+          \ inside)\n    os.makedirs(extraction_path, exist_ok=True)\n\n    # FULL\
+          \ Dataset URL\n    url = \"https://manning.box.com/shared/static/34dbdkmhahuafcxh0yhiqaf05rqnzjq9.gz\"\
+          \n\n    print(\"Starting download...\")\n    response = requests.get(url,\
           \ stream=True)\n    file_size = int(response.headers.get(\"Content-Length\"\
           , 0))\n    progress_bar = tqdm(total=file_size, unit=\"B\", unit_scale=True)\n\
-          \n    with open(downloaded_file, 'wb') as file:\n        for chunk in response.iter_content(chunk_size=1024):\n\
-          \            progress_bar.update(len(chunk))\n            file.write(chunk)\n\
-          \n    # Extract to the output directory\n    extraction_path = os.path.join(output_dataset.path,\
-          \ output_dir)\n    os.makedirs(extraction_path, exist_ok=True)\n\n    with\
-          \ tarfile.open(downloaded_file, 'r:gz') as tar:\n        tar.extractall(extraction_path)\n\
-          \n"
+          \n    with open(temp_download_path, 'wb') as file:\n        for chunk in\
+          \ response.iter_content(chunk_size=1024):\n            progress_bar.update(len(chunk))\n\
+          \            file.write(chunk)\n    progress_bar.close()\n    print(\"Download\
+          \ complete.\")\n\n    # Extract to the output directory\n    print(f\"Extracting\
+          \ to {extraction_path}...\")\n    with tarfile.open(temp_download_path,\
+          \ 'r:gz') as tar:\n        tar.extractall(extraction_path)\n    print(\"\
+          Extraction complete.\")\n\n    # Delete the temporary downloaded file\n\
+          \    os.remove(temp_download_path)\n    print(\"Temporary file deleted.\"\
+          )\n\n"
         image: python:3.11
     exec-output-file-contents:
       container:
@@ -126,7 +135,7 @@ deploymentSpec:
           \            sub_indent = ' ' * 4 * (level + 1)\n            for f in files:\n\
           \                print(f'{sub_indent}{f}')\n\n    print(f\"Contents of {dataset.path}:\"\
           )\n    list_files(dataset.path)\n\n"
-        image: python:3.9
+        image: python:3.11
     exec-split-dataset:
       container:
         args:
