@@ -136,13 +136,21 @@ def output_file_contents(dataset: Input[Dataset]):
 def pipeline(random_state: int = 42):
     # Download the dataset
     download_op = download_dataset()
+    download_op.set_cpu_limit('4')     # Límite de CPU
+    download_op.set_memory_limit('8Gi')  # Límite de memoria
+    download_op.set_cpu_request('2')    # Solicitud de CPU
+    download_op.set_memory_request('4Gi') # Solicitud de memoria
     
     # Split the dataset
     split_op = split_dataset(
         random_state=random_state,
         input_dataset=download_op.outputs["output_dataset"]
     )
-
+    split_op.set_cpu_limit('4')     # Límite de CPU
+    split_op.set_memory_limit('8Gi')  # Límite de memoria
+    split_op.set_cpu_request('2')    # Solicitud de CPU
+    split_op.set_memory_request('4Gi') # Solicitud de memoria
+    
     # Output the contents of both validation sets
     output_file_contents(dataset=split_op.outputs["train_dataset"])
 
@@ -152,5 +160,5 @@ if __name__ == '__main__':
 
     compiler.Compiler().compile(
         pipeline_func=pipeline,
-        package_path='dataprep_pipeline.yaml'
+        package_path='../compiled_pipelines/dataprep_pipeline.yaml'
     )
