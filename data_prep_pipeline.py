@@ -62,8 +62,8 @@ def split_dataset(
     import shutil
     from sklearn.model_selection import train_test_split
 
-    BASE_PATH = "MINIDATA"
-    # BASE_PATH = "DATA"
+    # BASE_PATH = "MINIDATA"
+    BASE_PATH = "DATA"
 
     # Adjust paths to use input_dataset.path
     images = list(glob.glob(os.path.join(input_dataset.path, "DATASET", BASE_PATH, "images", "**")))
@@ -136,14 +136,6 @@ def output_file_contents(dataset: Input[Dataset]):
 def pipeline(random_state: int = 42):
     # Download the dataset
     download_op = download_dataset()
-    download_op.add_pod_annotation(
-        name='kubernetes.io/ephemeral-storage',
-        value='30G'
-    )
-    download_op.add_pod_label(
-        name='kubernetes.io/ephemeral-storage-request',
-        value='30G'
-    )
     
     # Split the dataset
     split_op = split_dataset(
