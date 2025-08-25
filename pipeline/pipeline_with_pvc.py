@@ -88,6 +88,7 @@ import yaml
 import shutil
 import argparse
 from ultralytics import YOLO
+import datetime
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train YOLO model')
@@ -124,7 +125,7 @@ def main():
         yaml.dump(data, file)
 
     # Train model
-    model = YOLO('yolov8n.pt')
+    model = YOLO('yolo11n.pt')
     results = model.train(
         data=data_yaml_path,
         imgsz=640,
@@ -139,6 +140,11 @@ def main():
     best_model_dest = os.path.join(args.model_output, "best.pt")
     os.makedirs(os.path.dirname(best_model_dest), exist_ok=True)
     shutil.copy2(best_model_source, best_model_dest)
+
+    # Save the logs
+    source_dir = os.path.join(os.path.dirname(args.model_output), args.model_name)
+    dest_dir = "/data/logs"
+    shutil.copytree(source_dir, dest_dir, dirs_exist_ok=True)
 
 if __name__ == "__main__":
     main()
@@ -161,18 +167,25 @@ def train_model(
             # Install system dependencies
             apt-get update && \
             apt-get install -y --no-install-recommends \
-                libgl1-mesa-glx \
+                libgl1 \
+                libglx-mesa0 \
                 libglib2.0-0 \
                 && rm -rf /var/lib/apt/lists/* && \
             
             # Install Python packages
             pip install --no-cache-dir \
                 ultralytics \
+                tensorboard \
                 torch \
                 opencv-python-headless==4.8.1.78 \
                 minio \
                 tqdm \
                 pyyaml && \
+                
+            # Enable TensorBoard logging
+            yolo settings tensorboard=True
+
+            sleep 3
             
             # Write training script
             cat << 'EOF' > /train.py
@@ -232,38 +245,39 @@ def validate_model(
 
 
 @dsl.pipeline(
-    name="YOLO Object Detection Pipeline",
+    name="Obj detection",
     description="YOLO Object Detection Pipeline"
 )
 def pipeline(
         epochs: int = 1,
         batch: int = 8,
         random_state: int = 42,
-        yolo_model_name: str = "yolov8n_custom"
+        yolo_model_name: str = "yolov8n_custom",
+        pvc_name: str = "yolo"
 ):
     # Create PVC
-    pvc_name = 'yolo-pipeline-pvc'
+    # pvc_name = 'yolo-2'
 
     pvc = kubernetes.CreatePVC(
         pvc_name=pvc_name,
         access_modes=['ReadWriteOnce'],
-        size='1Gi',
-        storage_class_name='local-path',
-    )
+        size='50Gi',
+        storage_class_name='nfs-client',
+    ).set_caching_options(False)
     # Download dataset
-    download_op = download_dataset()
+    download_op = download_dataset().set_caching_options(False)
 
     # Split dataset
     split_op = split_dataset(
         random_state=random_state,
-    ).after(download_op)
+    ).after(download_op).set_caching_options(False)
 
     # Train model using split data
     train_op = train_model(
         epochs=epochs,
         batch=batch,
-        yolo_model_name=yolo_model_name,
-    ).after(split_op)
+        yolo_model_name=yolo_model_name
+    ).after(split_op).set_caching_options(False)
 
     # Validate model
     validate_op = validate_model(
@@ -279,7 +293,7 @@ def pipeline(
             mount_path='/data'
         )
 
-    kubernetes.DeletePVC(pvc_name=pvc_name).after(validate_op)
+    # kubernetes.DeletePVC(pvc_name=pvc_name).after(validate_op)
 
 
 if __name__ == '__main__':
